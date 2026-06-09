@@ -1,3 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+</head>
+<body>
+    <h2>Admin Viewer Panel</h2>
+    <button onclick="startViewing()">Connect to Camera</button>
+    <button onclick="switchRemoteCamera()">Switch Front/Back Camera</button>
+    <br><br>
+    <video id="remoteVideo" autoplay playsinline style="width: 100%; max-width: 600px; border: 2px solid #333;"></video>
+
+    <script src="/socket.io/socket.io.js"></script>
 <script>
         const socket = io();
         let peerConnection;
@@ -48,3 +61,5 @@
             socket.emit('switchCamera');
         }
     </script>
+</body>
+</html>
