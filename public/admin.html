@@ -7,54 +7,48 @@
     <h2>Admin Viewer Panel</h2>
     <button onclick="startViewing()">Connect to Camera</button>
     <button onclick="switchRemoteCamera()">Switch Front/Back Camera</button>
+    <div style="text-align: center; padding: 10px;">
+    <button onclick="socket.emit('start_camera')" style="padding: 10px; background: green; color: white;">Start Camera</button>
+    <button onclick="socket.emit('stop_camera')" style="padding: 10px; background: red; color: white;">Stop Camera</button>
     <br><br>
     <video id="remoteVideo" autoplay playsinline style="width: 100%; max-width: 600px; border: 2px solid #333;"></video>
 
     <script src="/socket.io/socket.io.js"></script>
-<script>
+    <script>
         const socket = io();
         let peerConnection;
-        let pendingCandidates = [];
         const configuration = { 'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}] };
 
         async function startViewing() {
             peerConnection = new RTCPeerConnection(configuration);
 
-            // আধুনিক WebRTC ভিডিও রিসিভ করার পদ্ধতি
-            peerConnection.addTransceiver('video', { direction: 'recvonly' });
-
             peerConnection.ontrack = (event) => {
-                const videoElement = document.getElementById('remoteVideo');
-                if (videoElement.srcObject !== event.streams[0]) {
-                    videoElement.srcObject = event.streams[0];
-                }
+                document.getElementById('remoteVideo').srcObject = event.streams[0];
             };
 
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) socket.emit('candidate', event.candidate);
             };
 
-            const offer = await peerConnection.createOffer();
+            const offer = await peerConnection.createOffer({ offerToReceiveVideo: true });
             await peerConnection.setLocalDescription(offer);
             socket.emit('offer', offer);
         }
 
         socket.on('answer', async (answer) => {
-            if (!peerConnection) return;
             await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            
-            for (let c of pendingCandidates) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(c));
-            }
-            pendingCandidates = [];
         });
 
         socket.on('candidate', async (candidate) => {
-            if (!peerConnection || !peerConnection.remoteDescription) {
-                pendingCandidates.push(candidate);
-            } else {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            }
+            if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        });
+          // অ্যাডমিন প্যানেল থেকে কমান্ড পেলে তা অ্যাপে পাঠিয়ে দেবে
+        socket.on('start_camera', () => {
+        socket.broadcast.emit('start_camera');
+        });
+
+        socket.on('stop_camera', () => {
+        socket.broadcast.emit('stop_camera');
         });
 
         function switchRemoteCamera() {
