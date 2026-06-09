@@ -12,7 +12,8 @@
         const socket = io();
         let localStream;
         let peerConnection;
-        let currentFacingMode = 'environment'; // 'environment' for back, 'user' for front
+        let pendingCandidates = []; // আগে আসা ডেটা সেভ রাখার জন্য
+        let currentFacingMode = 'environment';
 
         const configuration = { 'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}] };
 
@@ -20,41 +21,58 @@
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: facingMode, width: 640, height: 480 },
-                audio: false
-            });
-            document.getElementById('localVideo').srcObject = localStream;
-            
-            if(peerConnection) {
-                const videoTrack = localStream.getVideoTracks()[0];
-                const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
-                sender.replaceTrack(videoTrack);
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+                
+                if (peerConnection) {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+                    if (sender) sender.replaceTrack(videoTrack);
+                }
+            } catch (err) {
+                console.error("Camera error:", err);
+                alert("ক্যামেরার পারমিশন দিন বা ব্রাউজার সাপোর্ট করছে না!");
             }
         }
 
         socket.on('offer', async (offer) => {
             peerConnection = new RTCPeerConnection(configuration);
             
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
 
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) socket.emit('candidate', event.candidate);
             };
 
             await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            
+            // পেন্ডিং থাকা ক্যান্ডিডেটগুলো এখন কানেক্ট করা হবে
+            for (let c of pendingCandidates) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            }
+            pendingCandidates = [];
+
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
             socket.emit('answer', answer);
         });
 
         socket.on('candidate', async (candidate) => {
-            if (peerConnection) await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            if (!peerConnection || !peerConnection.remoteDescription) {
+                pendingCandidates.push(candidate); // প্রস্তুত না থাকলে কিউ-তে রাখা হবে
+            } else {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            }
         });
 
-        // Listen for remote switch command from Admin
         socket.on('switchCamera', () => {
             currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
             startCamera(currentFacingMode);
