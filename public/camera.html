@@ -1,122 +1,84 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera Bypassed</title>
-    <style>
-        body {
-            background-color: #000;
-            color: #0f0;
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
-        }
-        canvas {
-            border: 2px solid #0f0;
-            box-shadow: 0 0 15px #0f0;
-            background-color: #111;
-            margin-top: 10px;
-        }
-        h2 {
-            margin: 0;
-            text-shadow: 0 0 5px #0f0;
-        }
-        p { margin: 5px 0; font-size: 14px; }
-    </style>
+    <title>Camera Device</title>
 </head>
 <body>
-    <h2>[ IP_CAMERA_BYPASSED ]</h2>
-    <p>ক্যামেরা অফলাইনে আছে, এর বদলে গেম খেলুন (Use Arrow Keys)</p>
-    <canvas id="gameCanvas" width="400" height="400"></canvas>
-
+    <h2>IP Camera Active</h2>
+    <video id="localVideo" autoplay playsinline muted></video>
+    
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
+        const socket = io();
+        let localStream;
+        let peerConnection;
+        let pendingCandidates = []; // আগে আসা ডেটা সেভ রাখার জন্য
+        let currentFacingMode = 'environment';
 
-        const box = 20;
-        let snake = [];
-        snake[0] = { x: 9 * box, y: 10 * box };
+        const configuration = { 'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}] };
 
-        let food = {
-            x: Math.floor(Math.random() * 20) * box,
-            y: Math.floor(Math.random() * 20) * box
-        };
-
-        let score = 0;
-        let d;
-
-        document.addEventListener("keydown", direction);
-
-        function direction(event) {
-            if (event.keyCode == 37 && d != "RIGHT") d = "LEFT";
-            else if (event.keyCode == 38 && d != "DOWN") d = "UP";
-            else if (event.keyCode == 39 && d != "LEFT") d = "RIGHT";
-            else if (event.keyCode == 40 && d != "UP") d = "DOWN";
-        }
-
-        function draw() {
-            ctx.fillStyle = "#111";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            for (let i = 0; i < snake.length; i++) {
-                ctx.fillStyle = (i == 0) ? "#0f0" : "#00aa00";
-                ctx.fillRect(snake[i].x, snake[i].y, box, box);
-                ctx.strokeStyle = "#000";
-                ctx.strokeRect(snake[i].x, snake[i].y, box, box);
+        async function startCamera(facingMode) {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
             }
-
-            ctx.fillStyle = "red";
-            ctx.fillRect(food.x, food.y, box, box);
-
-            let snakeX = snake[0].x;
-            let snakeY = snake[0].y;
-
-            if (d == "LEFT") snakeX -= box;
-            if (d == "UP") snakeY -= box;
-            if (d == "RIGHT") snakeX += box;
-            if (d == "DOWN") snakeY += box;
-
-            if (snakeX == food.x && snakeY == food.y) {
-                score++;
-                food = {
-                    x: Math.floor(Math.random() * 20) * box,
-                    y: Math.floor(Math.random() * 20) * box
-                };
-            } else {
-                snake.pop();
-            }
-
-            let newHead = { x: snakeX, y: snakeY };
-
-            if (snakeX < 0 || snakeX >= canvas.width || snakeY < 0 || snakeY >= canvas.height || collision(newHead, snake)) {
-                clearInterval(game);
-                alert("Game Over! Score: " + score + "\nপেজটি রিলোড করে আবার খেলুন।");
-            }
-
-            snake.unshift(newHead);
-            
-            // Score Board
-            ctx.fillStyle = "#fff";
-            ctx.font = "20px Courier New";
-            ctx.fillText("Score: " + score, 10, 25);
-        }
-
-        function collision(head, array) {
-            for (let i = 0; i < array.length; i++) {
-                if (head.x == array[i].x && head.y == array[i].y) {
-                    return true;
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+                
+                if (peerConnection) {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+                    if (sender) sender.replaceTrack(videoTrack);
                 }
+            } catch (err) {
+                console.error("Camera error:", err);
+                alert("ক্যামেরার পারমিশন দিন বা ব্রাউজার সাপোর্ট করছে না!");
             }
-            return false;
         }
 
-        let game = setInterval(draw, 100);
+        socket.on('offer', async (offer) => {
+            peerConnection = new RTCPeerConnection(configuration);
+            
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) socket.emit('candidate', event.candidate);
+            };
+
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            
+            // পেন্ডিং থাকা ক্যান্ডিডেটগুলো এখন কানেক্ট করা হবে
+            for (let c of pendingCandidates) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(c));
+            }
+            pendingCandidates = [];
+
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit('answer', answer);
+        });
+
+        socket.on('candidate', async (candidate) => {
+            if (!peerConnection || !peerConnection.remoteDescription) {
+                pendingCandidates.push(candidate); // প্রস্তুত না থাকলে কিউ-তে রাখা হবে
+            } else {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            }
+        });
+
+        socket.on('switchCamera', () => {
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            startCamera(currentFacingMode);
+        });
+
+        startCamera(currentFacingMode);
     </script>
 </body>
 </html>
